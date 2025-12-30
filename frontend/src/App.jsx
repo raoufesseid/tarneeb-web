@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 
 export default function App() {
-  const socket = useMemo(() => io("http://localhost:4000"), []);
+  const socket = useMemo(() => io("https://tarneeb-web.onrender.com", { transports: ["websocket"] }), []);
+
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
   const [status, setStatus] = useState("Disconnected");
