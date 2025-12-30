@@ -2,7 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 
 export default function App() {
-  const socket = useMemo(() => io("https://tarneeb-web.onrender.com", { transports: ["websocket"] }), []);
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
+  const socket = useMemo(
+    () =>
+      io(BACKEND_URL, {
+        transports: ["websocket", "polling"],
+      }),
+    [BACKEND_URL]
+  );
 
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -11,8 +19,18 @@ export default function App() {
 
   useEffect(() => {
     socket.on("connect", () => setStatus("Connected"));
+    socket.on("connect_error", (err) => setStatus("Connection error: " + err.message));
+
+    socket.on("roomCreated", ({ roomCode }) => {
+      setRoomCode(roomCode);
+      setStatus("Room created ✅");
+    });
+
     socket.on("roomUpdate", (r) => setRoom(r));
-    socket.on("gameStart", () => setStatus("Game Ready"));
+    socket.on("gameStart", () => setStatus("Game Ready 🎮"));
+
+    socket.on("errorMsg", (m) => setStatus("Error: " + m));
+
     return () => socket.disconnect();
   }, [socket]);
 
@@ -29,13 +47,19 @@ export default function App() {
           style={{ width: "100%", padding: 10, marginBottom: 10 }}
         />
 
-        <button style={{ width: "100%", padding: 10, marginBottom: 8 }}
-          onClick={() => socket.emit("quickMatch", { name })}>
+        <button
+          style={{ width: "100%", padding: 10, marginBottom: 8 }}
+          onClick={() => socket.emit("quickMatch", { name })}
+          disabled={!name}
+        >
           🎲 Random Match
         </button>
 
-        <button style={{ width: "100%", padding: 10, marginBottom: 8 }}
-          onClick={() => socket.emit("createRoom", { name })}>
+        <button
+          style={{ width: "100%", padding: 10, marginBottom: 8 }}
+          onClick={() => socket.emit("createRoom", { name })}
+          disabled={!name}
+        >
           ➕ Create Room
         </button>
 
@@ -43,24 +67,22 @@ export default function App() {
           <input
             placeholder="ROOM CODE"
             value={roomCode}
-            onChange={e => setRoomCode(e.target.value)}
+            onChange={e => setRoomCode(e.target.value.toUpperCase())}
             style={{ flex: 1, padding: 10 }}
           />
           <button
             onClick={() => socket.emit("joinRoom", { name, roomCode })}
-            style={{ padding: 10 }}>
+            style={{ padding: 10 }}
+            disabled={!name || !roomCode}
+          >
             Join
           </button>
         </div>
 
         <div style={{ marginTop: 20 }}>
           <b>Room:</b> {room?.roomCode || "-"}
-          <div>
-            Player 1: {room?.players?.[0]?.name || "waiting"}
-          </div>
-          <div>
-            Player 2: {room?.players?.[1]?.name || "waiting"}
-          </div>
+          <div>Player 1: {room?.players?.[0]?.name || "waiting"}</div>
+          <div>Player 2: {room?.players?.[1]?.name || "waiting"}</div>
         </div>
       </div>
     </div>
