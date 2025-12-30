@@ -2,36 +2,32 @@ import { useEffect, useMemo, useState } from "react";
 import { io } from "socket.io-client";
 
 function Card({ c, onClick, disabled }) {
-  const label = `${c.r}${c.s}`;
   return (
     <button
-      disabled={disabled}
       onClick={onClick}
+      disabled={disabled}
       style={{
-        width: 58,
-        height: 82,
+        width: 60,
+        height: 90,
         borderRadius: 10,
-        border: "1px solid rgba(255,255,255,0.18)",
-        background: "rgba(255,255,255,0.06)",
+        border: "1px solid #334",
+        background: "rgba(255,255,255,0.08)",
         color: "white",
+        fontWeight: "bold",
         cursor: disabled ? "not-allowed" : "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 700
       }}
-      title={label}
     >
-      {label}
+      {c.r}{c.s}
     </button>
   );
 }
 
 export default function App() {
-  // ✅ مهم: في Render لازم تستخدم رابط الباك اند الحقيقي
-  // حاليا خليته يقرأ من ENV وإذا مو موجود يرجع لـ localhost
   const BACKEND = import.meta.env.VITE_BACKEND_URL || "http://localhost:4000";
-  const socket = useMemo(() => io(BACKEND, { transports: ["websocket"] }), [BACKEND]);
+  const socket = useMemo(
+    () => io(BACKEND, { transports: ["websocket"] }),
+    [BACKEND]
+  );
 
   const [name, setName] = useState("");
   const [roomCode, setRoomCode] = useState("");
@@ -42,20 +38,18 @@ export default function App() {
   const [yourIndex, setYourIndex] = useState(null);
   const [turnIndex, setTurnIndex] = useState(0);
   const [tableCard, setTableCard] = useState(null);
-  const [msg, setMsg] = useState("");
+
+  const [score, setScore] = useState({ p1: 0, p2: 0 });
 
   useEffect(() => {
     socket.on("connect", () => setStatus("Connected"));
-    socket.on("errorMsg", (m) => setMsg(m));
+    socket.on("gameStart", () => setStatus("Game Ready 🎮"));
 
+    socket.on("roomCreated", ({ roomCode }) => setRoomCode(roomCode));
     socket.on("roomUpdate", (r) => {
       setRoom(r);
       if (typeof r.turnIndex === "number") setTurnIndex(r.turnIndex);
-    });
-
-    socket.on("roomCreated", ({ roomCode }) => {
-      setRoomCode(roomCode);
-      setMsg(`Room code: ${roomCode}`);
+      if (r.score) setScore(r.score);
     });
 
     socket.on("hand", ({ hand, yourIndex }) => {
@@ -68,43 +62,49 @@ export default function App() {
       setTurnIndex(turnIndex);
     });
 
-    socket.on("gameStart", () => setStatus("Game Ready"));
+    socket.on("scoreUpdate", (s) => setScore(s));
 
     return () => socket.disconnect();
   }, [socket]);
 
-  const canPlay = yourIndex !== null && turnIndex === yourIndex;
+  const canPlay = yourIndex !== null && yourIndex === turnIndex;
 
-  function play(c) {
-    if (!room?.roomCode) return;
-    if (!canPlay) return;
-    // remove from local hand
-    setHand((h) => h.filter((x, i) => !(x.r === c.r && x.s === c.s)));
-    socket.emit("playCard", { roomCode: room.roomCode, card: c });
+  function play(card) {
+    if (!canPlay || !room?.roomCode) return;
+    setHand((h) => h.filter((c) => !(c.r === card.r && c.s === card.s)));
+    socket.emit("playCard", { roomCode: room.roomCode, card });
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#0b1220", color: "white", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-      <div style={{ width: 520 }}>
-        <h2 style={{ margin: 0 }}>Tarneeb (2 Players)</h2>
-        <p style={{ opacity: 0.8, marginTop: 6 }}>{status} • Backend: {BACKEND}</p>
-        {msg && <div style={{ background: "rgba(255,255,255,0.06)", padding: 10, borderRadius: 10, marginBottom: 10 }}>{msg}</div>}
+    <div
+      style={{
+        minHeight: "100vh",
+        width: "100vw",
+        background: "#0b1220",
+        color: "white",
+        display: "flex",
+        justifyContent: "center",
+        padding: 20,
+      }}
+    >
+      <div style={{ width: "100%", maxWidth: 1000 }}>
+        <h1>Tarneeb (2 Players)</h1>
+        <p>{status}</p>
 
-        <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+        {/* Controls */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
           <input
             placeholder="Your name"
             value={name}
-            onChange={e => setName(e.target.value)}
-            style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.05)", color: "white" }}
+            onChange={(e) => setName(e.target.value)}
+            style={{ padding: 10 }}
           />
 
-          <button style={{ width: "100%", padding: 10, borderRadius: 10, border: "none", background: "#1f6feb", color: "white", fontWeight: 700 }}
-            onClick={() => socket.emit("quickMatch", { name })}>
+          <button onClick={() => socket.emit("randomMatch", { name })}>
             🎲 Random Match
           </button>
 
-          <button style={{ width: "100%", padding: 10, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.10)", color: "white", fontWeight: 700 }}
-            onClick={() => socket.emit("createRoom", { name })}>
+          <button onClick={() => socket.emit("createRoom", { name })}>
             ➕ Create Room
           </button>
 
@@ -112,43 +112,59 @@ export default function App() {
             <input
               placeholder="ROOM CODE"
               value={roomCode}
-              onChange={e => setRoomCode(e.target.value)}
-              style={{ flex: 1, padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.15)", background: "rgba(255,255,255,0.05)", color: "white" }}
+              onChange={(e) => setRoomCode(e.target.value)}
+              style={{ flex: 1, padding: 10 }}
             />
-            <button
-              onClick={() => socket.emit("joinRoom", { name, roomCode })}
-              style={{ padding: 10, borderRadius: 10, border: "none", background: "#22c55e", color: "white", fontWeight: 800 }}>
+            <button onClick={() => socket.emit("joinRoom", { name, roomCode })}>
               Join
             </button>
           </div>
         </div>
 
-        <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "rgba(255,255,255,0.06)" }}>
+        {/* Room Info */}
+        <div style={{ marginTop: 20, padding: 12, background: "#111827", borderRadius: 10 }}>
           <b>Room:</b> {room?.roomCode || "-"} <br />
-          <b>Players:</b> {room?.players?.map(p => p.name).join(" vs ") || "-"} <br />
-          <b>Your turn?</b> {canPlay ? "✅ Yes" : "⏳ No"}
+          <b>Players:</b>{" "}
+          {room?.players?.map((p) => p.name).join(" vs ") || "-"} <br />
+          <b>Your turn:</b> {canPlay ? "✅ Yes" : "⏳ No"}
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>Table</h3>
-          <div style={{ opacity: 0.8 }}>Turn: Player {turnIndex + 1}</div>
+        {/* Score */}
+        <div style={{ marginTop: 10, padding: 12, background: "#020617", borderRadius: 10 }}>
+          <b>Score</b>
+          <div>{room?.players?.[0]?.name || "P1"}: {score.p1}</div>
+          <div>{room?.players?.[1]?.name || "P2"}: {score.p2}</div>
         </div>
 
-        <div style={{ marginTop: 8, padding: 14, borderRadius: 14, background: "rgba(255,255,255,0.06)", display: "flex", alignItems: "center", justifyContent: "center", minHeight: 110 }}>
+        {/* Table */}
+        <h3 style={{ marginTop: 20 }}>Table</h3>
+        <div
+          style={{
+            height: 120,
+            background: "#020617",
+            borderRadius: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
           {tableCard ? (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ opacity: 0.8, marginBottom: 6 }}>Played by Player {tableCard.by + 1}</div>
-              <Card c={tableCard} disabled />
-            </div>
+            <Card c={tableCard} disabled />
           ) : (
-            <div style={{ opacity: 0.7 }}>No card played yet</div>
+            <span>No card played yet</span>
           )}
         </div>
 
-        <h3 style={{ marginTop: 16 }}>Your Hand (13)</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {hand.map((c, idx) => (
-            <Card key={idx} c={c} disabled={!canPlay} onClick={() => play(c)} />
+        {/* Hand */}
+        <h3 style={{ marginTop: 20 }}>Your Hand</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {hand.map((c, i) => (
+            <Card
+              key={i}
+              c={c}
+              disabled={!canPlay}
+              onClick={() => play(c)}
+            />
           ))}
         </div>
       </div>
